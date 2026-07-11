@@ -90,9 +90,10 @@ Produced with the following command, on a single A100 (40GB):
 
 One epoch, ~398M training tokens. Trained on Google Colab using an NVIDIA A100-SXM4-40GB GPU (Ampere architecture family).
 
-**Approximate cost to reproduce:** ~11 Colab compute units (~$1.10 at $0.10/unit),
-based on the measured 45m 35s training time and Colab's published A100 rate of
-roughly 13–15 compute units/hour. Actual cost may vary with Colab's current pricing —
+**Approximate cost to reproduce:** \~15 Colab compute units (\~$1.50 at $0.10/unit, rounded
+up from the \~11 units the measured runtime implies, to leave headroom for Colab's variable
+consumption rate), based on the measured 45m 35s training time and Colab's published A100 rate
+of roughly 13–15 compute units/hour. Actual cost may vary with Colab's current pricing —
 check [Colab's pricing page](https://colab.research.google.com/signup) for up-to-date rates.
 
 | Metric | Value |
@@ -111,7 +112,7 @@ Loss converges quickly and plateaus by roughly 30% of the way through the epoch.
 **Training log — before vs. after:**
 
 First step (model is still random noise) vs. the final step (6072/6072), showing train/val
-loss dropping from ~9.8 to ~1.3 and throughput ramping up to a steady-state ~148k tok/sec.
+loss dropping from \~9.8 to \~1.3 and throughput ramping up to a steady-state \~148k tok/sec.
 
 *Before training (Step 0):*
 
