@@ -17,11 +17,12 @@ dataset — more model families will be added over time.
 attention-span/
 ├── training/
 │   └── gpt/
-│       ├── train_gpt.py       # GPT-124M training script (this project)
-│       └── loss_plot.png      # Loss curve from the training run below
-├── notebooks/                 # Exploratory notebooks used to build/validate each component
+│       ├── train_gpt.py                # GPT-124M training script (this project)
+│       ├── loss_plot.png               # Loss curve from the training run below
+│       └── gpt-architecture.png        # GPTModel architecture diagram
+├── notebooks/
+│   └── gpt/                   # Exploratory notebooks used to build/validate each component
 ├── notes/                     # Learning notes on transformer internals & training optimizations
-├── images/                    # Images used in this README
 └── checkpoints/               # (gitignored) Trained model checkpoints — not committed
 ```
 
@@ -39,7 +40,7 @@ A GPT-2-small-equivalent architecture, built from scratch:
 - 12 layers, 12 attention heads, 768 embedding dimension, 1024 context length
 - Vocabulary size rounded to 50,304 (nearest multiple of 64) for tensor-core-friendly shapes
 
-![GPTModel architecture diagram](images/gpt-architecture.png)
+![GPTModel architecture diagram](training/gpt/gpt-architecture.png)
 
 ## Dataset
 
