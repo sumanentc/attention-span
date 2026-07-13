@@ -224,58 +224,33 @@ A CUDA-capable GPU is strongly recommended (developed and tested on an NVIDIA A1
 
 ## Parameters worth experimenting with
 
-All configurable via CLI flags on `train_gpt.py` (run `--help` for the full list).
-A few worth trying beyond the defaults used for the reported results:
+Run `python training/gpt/train_gpt.py --help` to see every configurable flag and its
+default. A few are worth tuning beyond the defaults used for the reported results:
 
-**Batch size & effective batch size**
+- **`--micro_batch_size` / `--grad_accum_steps`** — use the largest micro batch that fits
+  in GPU memory; raise `grad_accum_steps` to simulate a larger effective batch
+  (`micro_batch_size × grad_accum_steps × context_length` tokens/step) without needing more memory
+- **`--max_lr` / `--warmup_steps`** — lower `max_lr` (e.g. 3e-4) for stabler/slower
+  convergence, higher (e.g. 1e-3) for faster but riskier training (watch `norm` for spikes);
+  longer warmup tends to help larger models or higher `max_lr`
+- **`--num_epochs`** — more epochs help on larger/more diverse datasets (less useful on
+  TinyStories alone — loss plateaued by ~30% through one epoch)
+- **`--eval_freq` / `--eval_iter`** — lower `eval_freq` for closer monitoring on short runs;
+  raise `eval_iter` for a more stable loss estimate at the cost of eval speed
+- **`--compile` / `--no-compile`** — disable on `torch.compile` errors, or for very short
+  runs where compile overhead isn't worth it
 
-| Flag | Default | What to try |
-|---|---|---|
-| `--micro_batch_size` | 16 | Largest that fits in GPU memory — bigger means better utilization |
-| `--grad_accum_steps` | 1 | Raise to simulate a larger effective batch (`micro_batch_size × grad_accum_steps × context_length` tokens/step) without more memory |
+**Model architecture** (hardcoded in `GPT_CONFIG_124M`, not yet CLI flags — edit directly
+to try):
+- `context_length` (1024) — shorter (e.g. 256) cuts memory/compute for faster experimentation
+- `n_layers` / `n_heads` / `emb_dim` (12 / 12 / 768) — scale up together for a larger model
+  (e.g. GPT-2 medium: 24 / 16 / 1024)
+- `drop_rate` (0.1) — lower (or 0.0) if underfitting; TinyStories may not need much dropout
 
-**Learning rate & schedule**
-
-| Flag | Default | What to try |
-|---|---|---|
-| `--max_lr` | 6e-4 | Lower (3e-4) for stabler/slower convergence; higher (1e-3) is faster but risks instability — watch `norm` for spikes |
-| `--warmup_steps` | 10 | Longer (100–500) helps larger models or higher `max_lr` |
-| `--weight_decay` | 0.1 | Standard GPT-2/GPT-3 value; lower if underfitting |
-
-**Training length**
-
-| Flag | Default | What to try |
-|---|---|---|
-| `--num_epochs` | 1 | More epochs help on larger/more diverse datasets (less useful on TinyStories alone — loss plateaued by ~30% through one epoch) |
-
-**Evaluation & checkpointing**
-
-| Flag | Default | What to try |
-|---|---|---|
-| `--eval_freq` | 500 | Lower for closer monitoring on short runs; raise on long runs to cut eval overhead |
-| `--eval_iter` | 50 | More batches = more stable loss estimate, at the cost of eval speed |
-| `--keep_last_n_checkpoints` | 3 | Raise for a longer checkpoint history |
-
-**Compute/precision**
-
-| Flag | Default | What to try |
-|---|---|---|
-| `--compile` / `--no-compile` | `--compile` | Disable on `torch.compile` errors, or for very short runs where compile overhead isn't worth it |
-
-**Model architecture** (hardcoded in `GPT_CONFIG_124M`, not yet CLI flags):
-
-| Parameter | Default | What to try |
-|---|---|---|
-| `context_length` | 1024 | Shorter (256) cuts memory/compute (attention scales quadratically) for faster experimentation |
-| `n_layers` / `n_heads` / `emb_dim` | 12 / 12 / 768 | Scale up together for a larger model (e.g. GPT-2 medium: 24 / 16 / 1024) |
-| `drop_rate` | 0.1 | Lower (or 0.0) if underfitting; TinyStories may not need much dropout |
-
-**Inference / decoding** (`generate_text_sampled`)
-
-| Parameter | Default | What to try |
-|---|---|---|
-| `temperature` | 1.0 | 0.0 for greedy/deterministic; 0.7–0.9 for coherent variety; 1.0+ for more randomness |
-| `top_k` | `None` | 40–50 filters out unlikely tokens while keeping variety |
+**Inference / decoding** (`generate_text_sampled`):
+- `temperature` (1.0) — 0.0 for greedy/deterministic, 0.7–0.9 for coherent variety, 1.0+ for
+  more randomness
+- `top_k` (`None`) — 40–50 filters out unlikely tokens while keeping variety
 
 ---
 
