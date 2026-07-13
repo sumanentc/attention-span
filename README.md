@@ -17,11 +17,14 @@ dataset — more model families will be added over time.
 attention-span/
 ├── training/
 │   └── gpt/
-│       ├── train_gpt.py                # GPT-124M training script (this project)
-│       ├── loss_plot.png               # Loss curve from the training run below
-│       └── gpt-architecture.png        # GPTModel architecture diagram
+│       ├── train_gpt.py                          # GPT-124M training script (this project)
+│       ├── tinystories_alpaca_train_sample.jsonl  # Sample Alpaca-style instruction dataset (see notebook below)
+│       ├── loss_plot.png                         # Loss curve from the training run below
+│       └── gpt-architecture.png                  # GPTModel architecture diagram
 ├── notebooks/
-│   └── gpt/                   # Exploratory notebooks used to build/validate each component
+│   └── gpt/
+│       ├── Pretraining_GPT2.ipynb              # Deep-dive notebook: builds the model + optimizations step by step
+│       └── prepare_instruction_dataset.ipynb   # Builds an Alpaca-style instruction dataset from TinyStories
 ├── notes/                     # Learning notes on transformer internals & training optimizations
 └── checkpoints/               # (gitignored) Trained model checkpoints — not committed
 ```
@@ -47,6 +50,21 @@ A GPT-2-small-equivalent architecture, built from scratch:
 [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) — a dataset of short,
 simple children's stories, designed for training small language models that can still
 produce coherent narrative text.
+
+---
+
+## Instruction dataset (Alpaca-style, from TinyStories)
+
+TinyStories has no natural instructions — just plain short stories. To use it for
+instruction fine-tuning, [`notebooks/gpt/prepare_instruction_dataset.ipynb`](notebooks/gpt/prepare_instruction_dataset.ipynb)
+synthesizes `{instruction, input, output}` triples from the raw text via four templates
+(story continuation, opening-sentence completion, keyword-constrained generation, and free
+generation), each story randomly assigned 2 of the 4 templates.
+
+A sample of the resulting dataset is at
+[`training/gpt/tinystories_alpaca_train_sample.jsonl`](training/gpt/tinystories_alpaca_train_sample.jsonl)
+(3,991 examples built from 2,000 stories) — refer to it to see the exact JSONL shape expected
+for instruction fine-tuning.
 
 ---
 
@@ -83,11 +101,8 @@ Built up incrementally, each one addressing a specific bottleneck encountered al
 
 ## Results
 
-Produced with the following command, on a single A100 (40GB):
-
-```bash
-!python training/gpt/train_gpt.py --num_epochs 1 --micro_batch_size 16 --grad_accum_steps 4 --eval_freq 500 --checkpoint_dir /content/sample_data
-```
+Produced on a single A100 (40GB) using the Colab command shown in
+[Running the training script](#running-the-training-script) below.
 
 One epoch, ~398M training tokens. Trained on Google Colab using an NVIDIA A100-SXM4-40GB GPU (Ampere architecture family).
 
@@ -114,12 +129,11 @@ Loss converges quickly and plateaus by roughly 30% of the way through the epoch.
 
 First step (model is still random noise) vs. the final step (6072/6072), showing train/val
 loss dropping from \~9.8 to \~1.3 and throughput ramping up to a steady-state \~148k tok/sec.
+(Device: NVIDIA A100-SXM4-40GB, 39.49 GB total memory, for both steps below.)
 
 *Before training (Step 0):*
 
 ```
-Device Name: NVIDIA A100-SXM4-40GB
-Total Memory available: 39.49 GB
 Maximum GPU memory allocated: 0.5 GB
   0% 1/6072 [00:38<64:31:11, 38.26s/it]Ep 1, Step 000000 | Train loss: 9.802 | Val loss: 9.835 | norm: 17.9942 | LR: 0.000060 | Step tok/sec: 1713 | Avg tok/sec: 0
 Once upon a time....................................................................................................
@@ -128,8 +142,6 @@ Once upon a time................................................................
 *After training (Step 6071, final):*
 
 ```
-Device Name: NVIDIA A100-SXM4-40GB
-Total Memory available: 39.49 GB
 Maximum GPU memory allocated: 15.3 GB
 100% 6072/6072 [45:21<00:00,  2.39it/s]Ep 1, Step 006071 | Train loss: 1.276 | Val loss: 1.350 | norm: 0.2517 | LR: 0.000060 | Step tok/sec: 123565 | Avg tok/sec: 148284
 Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine. One day, she saw a big, scary dog. The dog was barking loudly and Lily was scared. She ran to her mommy and said, "Mommy, there's a scary dog outside!"   Mommy said, "Don't worry, Lily. The dog is friendly. He just wants to play."   Lily felt better and went back outside to play. She saw
@@ -164,13 +176,20 @@ decoding strategies.
 
 ## Running the training script
 
-Works identically in Colab and on a remote GPU cluster via VS Code — no code changes needed.
+**`training/gpt/train_gpt.py` is the script to use for training GPT** — it consolidates
+every optimization listed above into a single, ready-to-run script. Works identically in
+Colab and on a remote GPU cluster via VS Code — no code changes needed.
+
+For a deep dive into *how* the model and each optimization were built up incrementally
+(architecture, weight tying, FlashAttention, mixed precision, optimizer setup, etc.), see
+[`notebooks/gpt/Pretraining_GPT2.ipynb`](notebooks/gpt/Pretraining_GPT2.ipynb) — it walks
+through constructing the model from scratch, step by step.
 
 **Google Colab**
 ```bash
 !python training/gpt/train_gpt.py --num_epochs 1 --micro_batch_size 16 --grad_accum_steps 4 --eval_freq 500 --checkpoint_dir /content/sample_data
 ```
-*(the exact command used to produce the results reported above; see the note in that section about checkpoint persistence)*
+*(the exact command used to produce the results reported above)*
 
 **VS Code / remote GPU cluster (terminal)**
 ```bash
@@ -212,52 +231,51 @@ A few worth trying beyond the defaults used for the reported results:
 
 | Flag | Default | What to try |
 |---|---|---|
-| `--micro_batch_size` | 16 | Largest value that fits in GPU memory for your hardware — bigger generally means faster training (better GPU utilization) |
-| `--grad_accum_steps` | 1 | Increase to simulate a larger effective batch size (`micro_batch_size × grad_accum_steps × context_length` tokens per optimizer step) without needing more GPU memory |
+| `--micro_batch_size` | 16 | Largest that fits in GPU memory — bigger means better utilization |
+| `--grad_accum_steps` | 1 | Raise to simulate a larger effective batch (`micro_batch_size × grad_accum_steps × context_length` tokens/step) without more memory |
 
 **Learning rate & schedule**
 
 | Flag | Default | What to try |
 |---|---|---|
-| `--max_lr` | 6e-4 | Lower (e.g. 3e-4) for more stable but slower convergence; higher (e.g. 1e-3) trains faster but risks instability — watch the `norm` value in training logs for spikes |
-| `--warmup_steps` | 10 | Longer warmup (e.g. 100–500) tends to help more with larger models or higher `max_lr` |
-| `--weight_decay` | 0.1 | Standard GPT-2/GPT-3 value; lower it if the model seems to be underfitting |
+| `--max_lr` | 6e-4 | Lower (3e-4) for stabler/slower convergence; higher (1e-3) is faster but risks instability — watch `norm` for spikes |
+| `--warmup_steps` | 10 | Longer (100–500) helps larger models or higher `max_lr` |
+| `--weight_decay` | 0.1 | Standard GPT-2/GPT-3 value; lower if underfitting |
 
 **Training length**
 
 | Flag | Default | What to try |
 |---|---|---|
-| `--num_epochs` | 1 | More epochs on a larger/more diverse dataset (less useful on TinyStories alone — our loss curve had already plateaued by ~30% through one epoch) |
+| `--num_epochs` | 1 | More epochs help on larger/more diverse datasets (less useful on TinyStories alone — loss plateaued by ~30% through one epoch) |
 
 **Evaluation & checkpointing**
 
 | Flag | Default | What to try |
 |---|---|---|
-| `--eval_freq` | 500 | Lower for closer loss monitoring on short runs; raise on longer runs to reduce eval overhead |
-| `--eval_iter` | 50 | More batches = more stable/accurate loss estimate per checkpoint, at the cost of eval speed |
-| `--keep_last_n_checkpoints` | 3 | Raise if you want a longer history of epoch checkpoints to compare later |
+| `--eval_freq` | 500 | Lower for closer monitoring on short runs; raise on long runs to cut eval overhead |
+| `--eval_iter` | 50 | More batches = more stable loss estimate, at the cost of eval speed |
+| `--keep_last_n_checkpoints` | 3 | Raise for a longer checkpoint history |
 
 **Compute/precision**
 
 | Flag | Default | What to try |
 |---|---|---|
-| `--compile` / `--no-compile` | `--compile` | Disable if you hit `torch.compile` errors on your setup, or if compilation overhead isn't worth it for a very short run |
+| `--compile` / `--no-compile` | `--compile` | Disable on `torch.compile` errors, or for very short runs where compile overhead isn't worth it |
 
-**Model architecture** (currently hardcoded in `GPT_CONFIG_124M`, not yet CLI flags —
-worth trying by editing the config directly):
+**Model architecture** (hardcoded in `GPT_CONFIG_124M`, not yet CLI flags):
 
 | Parameter | Default | What to try |
 |---|---|---|
-| `context_length` | 1024 | Shorter (e.g. 256) drastically reduces memory/compute (attention scales quadratically with this), useful for faster experimentation |
-| `n_layers` / `n_heads` / `emb_dim` | 12 / 12 / 768 | Scale up together for a larger model (e.g. GPT-2 medium: 24 / 16 / 1024) if more compute is available |
-| `drop_rate` | 0.1 | Lower (or 0.0) if the model is underfitting; TinyStories is simple enough that dropout may not be strictly necessary |
+| `context_length` | 1024 | Shorter (256) cuts memory/compute (attention scales quadratically) for faster experimentation |
+| `n_layers` / `n_heads` / `emb_dim` | 12 / 12 / 768 | Scale up together for a larger model (e.g. GPT-2 medium: 24 / 16 / 1024) |
+| `drop_rate` | 0.1 | Lower (or 0.0) if underfitting; TinyStories may not need much dropout |
 
 **Inference / decoding** (`generate_text_sampled`)
 
 | Parameter | Default | What to try |
 |---|---|---|
-| `temperature` | 1.0 | 0.0 for fully deterministic (greedy); 0.7–0.9 for coherent variety; 1.0+ for more randomness |
-| `top_k` | `None` | 40–50 is a reasonable starting range to avoid unlikely/low-quality token choices while still allowing variety |
+| `temperature` | 1.0 | 0.0 for greedy/deterministic; 0.7–0.9 for coherent variety; 1.0+ for more randomness |
+| `top_k` | `None` | 40–50 filters out unlikely tokens while keeping variety |
 
 ---
 
