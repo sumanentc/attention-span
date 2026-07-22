@@ -24,7 +24,8 @@ attention-span/
 ├── notebooks/
 │   └── gpt/
 │       ├── Pretraining_GPT2.ipynb              # Deep-dive notebook: builds the model + optimizations step by step
-│       └── prepare_instruction_dataset.ipynb   # Builds an Alpaca-style instruction dataset from TinyStories
+│       ├── prepare_instruction_dataset.ipynb   # Builds an Alpaca-style instruction dataset from TinyStories
+│       └── Instruction_finetune_gpt.ipynb      # Instruction fine-tunes the pretrained GPT-124M on the Alpaca-style dataset
 ├── notes/                     # Learning notes on transformer internals & training optimizations
 └── checkpoints/               # (gitignored) Trained model checkpoints — not committed
 ```
@@ -65,6 +66,53 @@ A sample of the resulting dataset is at
 [`training/gpt/tinystories_alpaca_train_sample.jsonl`](training/gpt/tinystories_alpaca_train_sample.jsonl)
 (3,991 examples built from 2,000 stories) — refer to it to see the exact JSONL shape expected
 for instruction fine-tuning.
+
+---
+
+## Instruction fine-tuning (`notebooks/gpt/Instruction_finetune_gpt.ipynb`)
+
+[`notebooks/gpt/Instruction_finetune_gpt.ipynb`](notebooks/gpt/Instruction_finetune_gpt.ipynb)
+fine-tunes the pretrained GPT-124M checkpoint on the Alpaca-style dataset built above,
+walking through the full pipeline in three stages:
+
+**Stage 1 — Preparing the dataset**
+- Alpaca prompt formatting (`### Instruction / ### Input / ### Response`) with `input` field
+  skipped when empty
+- Per-example tokenization with response-only loss masking (instruction tokens are masked out
+  so the model only trains on what it should generate)
+- Padded batch collation + DataLoader setup
+
+**Stage 2 — Fine-tuning the LLM**
+- Loads the pretrained GPT-124M weights from a local checkpoint (the same architecture as
+  `train_gpt.py`)
+- Fine-tunes with a much lower learning rate and fewer epochs than pretraining — the standard
+  SFT playbook
+- Cosine LR schedule with linear warmup, gradient clipping, bfloat16 mixed precision
+
+**Stage 3 — Evaluating the LLM**
+- Captures before/after responses on a held-out test split
+- Qualitative spot-checks (format compliance, instruction following, narrative quality)
+- ROUGE-1 and ROUGE-L scoring against reference outputs
+
+### Fine-tuning results
+
+| Metric | Before fine-tuning | After fine-tuning | Delta |
+|---|---|---|---|
+| Final train loss | — | 1.131 | — |
+| Final val loss | — | 1.299 | — |
+| ROUGE-1 F1 | 0.167 | 0.373 | +0.205 |
+| ROUGE-L F1 | 0.119 | 0.220 | +0.101 |
+
+Fine-tuning ran for 2 epochs (~848 steps) on an A100. Before fine-tuning the model ignored
+the instruction template entirely and generated unrelated continuations. After fine-tuning,
+every response is a coherent, on-topic attempt at the actual task and the model respects the
+`### Instruction / ### Response` format consistently.
+
+**What still falls short:** keyword-constraint following (the model works in one or two
+required words but rarely all of them — a known limitation of plain SFT loss, which has no
+discrete "constraint satisfied" signal) and mode collapse under greedy decoding (responses
+lean toward the same character names and plot shapes; sampling-based decoding reveals more
+diversity).
 
 ---
 
@@ -256,9 +304,14 @@ to try):
 
 ## What's next
 
+- Switch the instruction dataset to `TinyStoriesInstruct` (its `Words:` field is a stronger
+  keyword-constraint signal than words retrofitted onto existing stories)
+- Add verify-and-regenerate at inference time: check keyword compliance and resample if not
+  met — a no-retraining fix for the constraint-following gap
+- Preference optimization (DPO) on top of the SFT checkpoint, using constraint satisfaction
+  as the preference signal
 - Test coherence over longer generations (500+ tokens)
 - Try a larger model size (355M) for comparison
-- Explore training on a more diverse dataset beyond TinyStories
 - Train on [OpenWebText2](https://openwebtext2.readthedocs.io/en/latest/) with multi-GPU
   (DDP) support, to scale beyond a single-GPU, single-dataset setup
 - Add training scripts for other model families under `training/` (e.g. Llama-style architectures) as I explore them

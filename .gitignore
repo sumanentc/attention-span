@@ -32,6 +32,10 @@ runs/
 logs/
 mlruns/
 
+# Exception: track the training checkpoint
+!training/checkpoint/
+!training/checkpoint/**
+
 # Datasets / caches
 data/
 *.zip
